@@ -76,7 +76,7 @@ function Home() {
                     className="bg-blue-600 rounded-2xl py-2 px-5 text-white"
                     type="submit"
                 >
-                    Join Call
+                    Next
                 </button>
             </form>
         </div>

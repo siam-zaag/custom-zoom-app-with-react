@@ -16,6 +16,7 @@ function Meeting() {
 
     const [client, setClient] = useState(null);
     const [mediaStream, setMediaStream] = useState(null);
+
     const [joined, setJoined] = useState(false);
     const [isJoining, setIsJoining] = useState(false);
     const [error, setError] = useState("");
@@ -24,18 +25,18 @@ function Meeting() {
     const [isAudioOn, setIsAudioOn] = useState(false);
     const [isVideoOn, setIsVideoOn] = useState(false);
 
-    // For storing a list of participants (including remote ones)
+    // Keep track of participants (including yourself)
     const [participants, setParticipants] = useState([]);
 
-    // **Canvas** refs for local and remote video
-    const selfVideoRef = useRef(null);
-    const videoContainerRefs = useRef({}); // { userId: canvasElement, ... }
+    // Canvas references
+    const selfVideoRef = useRef(null); // local self-view
+    const videoContainerRefs = useRef({}); // { userId: <canvas>, ... }
+    const [isCameraBusy, setIsCameraBusy] = useState(false);
 
     // If someone arrives at /meeting directly, redirect
     useEffect(() => {
         if (!state) {
             navigate("/");
-            return;
         }
     }, [state, navigate]);
 
@@ -66,12 +67,40 @@ function Meeting() {
                     );
                 });
 
-                // Listen for participants updating
+                // Listen for participant property changes (e.g., rename)
                 zoomClient.on("user-updated", (user) => {
                     setParticipants((prev) =>
                         prev.map((p) => (p.userId === user.userId ? user : p))
                     );
                 });
+
+                /**
+                 * KEY: Listen for changes in video status (Start/Stop).
+                 * This is where we call mediaStream.renderVideo or stopRenderVideo.
+                 */
+                zoomClient.on(
+                    "user-video-status-changed",
+                    async ({ action, userId }) => {
+                        console.log(
+                            `user-video-status-changed -> userId: ${userId}, action: ${action}`
+                        );
+
+                        // Local user ID
+                        const localUserId =
+                            zoomClient.getCurrentUserInfo()?.userId;
+
+                        // Skip if it's the local user, since we handle local video with startVideo()
+                        if (userId === localUserId) return;
+
+                        if (action === "Start") {
+                            // Remote user turned ON their camera. Render their video.
+                            await renderRemoteUserVideo(userId);
+                        } else if (action === "Stop") {
+                            // Remote user turned OFF their camera. We can stop render or show placeholder.
+                            stopRenderRemoteUserVideo(userId);
+                        }
+                    }
+                );
             } catch (initError) {
                 console.error("Error initializing Zoom client:", initError);
                 setError(
@@ -94,6 +123,50 @@ function Meeting() {
         };
     }, [client]);
 
+    // Helper: Render a remote participant’s video if their camera is ON
+    const renderRemoteUserVideo = async (userId) => {
+        if (!mediaStream) return;
+
+        // If no canvas for this user, create one
+        if (!videoContainerRefs.current[userId]) {
+            const canvas = document.createElement("canvas");
+            canvas.width = 640;
+            canvas.height = 360;
+            canvas.style.backgroundColor = "black";
+            canvas.style.margin = "5px";
+            videoContainerRefs.current[userId] = canvas;
+        }
+
+        const canvasElement = videoContainerRefs.current[userId];
+        try {
+            await mediaStream.renderVideo(
+                canvasElement,
+                userId,
+                640,
+                360,
+                0,
+                0,
+                2
+            );
+            console.log(`Rendered video for userId: ${userId}`);
+        } catch (err) {
+            console.error(`Error rendering video for user ${userId}`, err);
+        }
+    };
+
+    // Helper: Stop rendering remote user’s video
+    const stopRenderRemoteUserVideo = (userId) => {
+        if (!mediaStream) return;
+        // Optionally call mediaStream.stopRenderVideo for that user
+        // or remove the canvas from the DOM
+        try {
+            mediaStream.stopRenderVideo(userId);
+            console.log(`Stopped video render for userId: ${userId}`);
+        } catch (err) {
+            console.error(`Error stopping video for user ${userId}`, err);
+        }
+    };
+
     /**
      * Join the meeting with generated signature
      */
@@ -104,7 +177,7 @@ function Meeting() {
         setError("");
 
         try {
-            // 1. Generate signature
+            // 1. Generate signature (Make sure isHost is 0/1 for the Zoom formula)
             const signature = generateSignature(
                 roomName,
                 isHost ? 1 : 0,
@@ -136,6 +209,7 @@ function Meeting() {
             setIsAudioOn(false);
             setIsVideoOn(false);
             setParticipants([]);
+            navigate("/");
         } catch (err) {
             console.error("Error leaving meeting:", err);
         }
@@ -165,14 +239,17 @@ function Meeting() {
      * Toggle Video (Self)
      */
     const handleToggleVideo = async () => {
-        if (!joined || !mediaStream) return;
+        // If we're not joined, or mediaStream is missing, or camera is already busy, do nothing
+        if (!joined || !mediaStream || isCameraBusy) return;
+
+        setIsCameraBusy(true); // Mark as busy to block repeated calls
+        setError("");
 
         try {
             if (isVideoOn) {
                 await mediaStream.stopVideo();
                 setIsVideoOn(false);
             } else {
-                // **Important**: The element must be <canvas> or <video>
                 await mediaStream.startVideo({
                     videoElement: selfVideoRef.current,
                 });
@@ -181,51 +258,20 @@ function Meeting() {
         } catch (videoErr) {
             console.error("Error toggling video:", videoErr);
             setError("Error toggling video. Check console for details.");
+        } finally {
+            // Allow toggles again
+            setIsCameraBusy(false);
         }
     };
 
-    /**
-     * Render remote participants whenever they change
-     */
-    useEffect(() => {
-        if (!mediaStream || !joined) return;
-
-        participants.forEach((user) => {
-            const localUserId = client?.getCurrentUserInfo()?.userId;
-
-            // Skip rendering for local user in remote participants
-            if (user.userId === localUserId) return;
-
-            // If we don't already have a canvas for this user, create one
-            if (!videoContainerRefs.current[user.userId]) {
-                const canvas = document.createElement("canvas");
-                canvas.width = 640;
-                canvas.height = 360;
-                canvas.style.backgroundColor = "black";
-                canvas.style.margin = "5px";
-                videoContainerRefs.current[user.userId] = canvas;
-            }
-
-            // Render remote user in their canvas
-            const canvasElement = videoContainerRefs.current[user.userId];
-            mediaStream
-                .renderVideo(canvasElement, user.userId, 640, 360, 0, 0, 2)
-                .catch((err) =>
-                    console.error(
-                        `Error rendering video for user ${user.userId}`,
-                        err
-                    )
-                );
-        });
-    }, [participants, mediaStream, joined, client]);
-
     // Build participant elements for remote users
     const participantVideoElements = participants
+        // Filter out local user (we have a separate selfVideoRef)
         .filter((user) => user.userId !== client?.getCurrentUserInfo()?.userId)
         .map((user) => {
             return (
                 <div key={user.userId} className="flex flex-col items-center">
-                    {/* Attach the participant's canvas to the DOM */}
+                    {/* Attach the participant's <canvas> to the DOM */}
                     <div
                         ref={(element) => {
                             if (
@@ -234,7 +280,7 @@ function Meeting() {
                             ) {
                                 const canvas =
                                     videoContainerRefs.current[user.userId];
-                                // If not already attached to the DOM, append it
+                                // If not already attached, append it
                                 if (!element.contains(canvas)) {
                                     element.appendChild(canvas);
                                 }
@@ -248,7 +294,7 @@ function Meeting() {
             );
         });
 
-    // If no state was passed (room name, username, etc.), we show nothing
+    // If no state was passed (room name, username, etc.), show nothing
     if (!state) {
         return null;
     }
@@ -303,6 +349,7 @@ function Meeting() {
                     <button
                         className="bg-gray-200 py-2 px-4 rounded"
                         onClick={handleToggleVideo}
+                        disabled={isCameraBusy} // <--- disable if busy
                     >
                         {isVideoOn ? "Stop Video" : "Start Video"}
                     </button>
@@ -314,13 +361,12 @@ function Meeting() {
                 {/* Self View (Local) */}
                 {joined && (
                     <div className="flex flex-col items-center">
-                        {/* IMPORTANT: <canvas> for self video */}
                         <canvas
                             ref={selfVideoRef}
                             width={640}
                             height={360}
                             className="bg-black rounded"
-                        ></canvas>
+                        />
                         <p className="text-xs text-gray-200 bg-gray-700 p-1 mt-1">
                             {username} (You)
                         </p>
