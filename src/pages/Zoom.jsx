@@ -28,28 +28,30 @@ function Zoom() {
                     sdkSecret
                 );
 
-                // 2. Get your DOM elements
+                // 2. Prepare DOM elements
                 const selfView = document.getElementById("self-view");
                 const participantsCanvas =
                     document.getElementById("participants-c");
 
-                // 3. Create a new client & join
+                // 3. Create a new client & init
                 const zoomClient = ZoomVideo.createClient();
                 await zoomClient.init("en-US", "Global", {
                     patchJsMedia: true,
                 });
                 setClient(zoomClient);
 
+                // 4. Join the session
                 await zoomClient.join(roomName, signature, username, "");
 
-                // 4. Get media stream
+                // 5. Get media stream
                 const stream = zoomClient.getMediaStream();
                 setMediaStream(stream);
 
-                // 5. Start your own video
+                // 6. Start your own local video
+                //    (Each participant must do this on their own machine if they want to share video.)
                 await stream.startVideo({ videoElement: selfView });
 
-                // 6. Render your own video
+                // 7. Render your own local video feed
                 try {
                     await stream.renderVideo(
                         selfView,
@@ -64,11 +66,11 @@ function Zoom() {
                     console.error("Error rendering self video:", error);
                 }
 
-                // 7. Render video for all current users who are sending video
+                // 8. Render video for all current users who are already sending video
                 const allUsers = zoomClient.getAllUser();
                 for (const user of allUsers) {
                     if (user.bVideoOn) {
-                        // user is currently sending video
+                        // Only call renderVideo if they're actually sending video
                         try {
                             await stream.renderVideo(
                                 participantsCanvas,
@@ -81,14 +83,14 @@ function Zoom() {
                             );
                         } catch (err) {
                             console.error(
-                                `Error rendering video for user ${user.userId}`,
+                                `Error rendering video for user ${user.userId}:`,
                                 err
                             );
                         }
                     }
                 }
 
-                // 8. Bind relevant user events
+                // 9. Bind user-related events for new/updated participants
                 bindZoomEvents(zoomClient, stream, participantsCanvas);
             } catch (joinErr) {
                 console.error("Error joining the Zoom meeting:", joinErr);
@@ -97,25 +99,26 @@ function Zoom() {
 
         initZoom();
 
-        return () => {
-            // Optional cleanup if leaving the meeting on component unmount
-            // if (client) {
-            //   try {
-            //     client.leave();
-            //     navigate("/");
-            //   } catch (leaveError) {
-            //     console.error("Error leaving Zoom session:", leaveError);
-            //   }
-            // }
-        };
+        // If you want to leave automatically on unmount, uncomment below:
+        // return () => {
+        //   if (client) {
+        //     try {
+        //       client.leave();
+        //       navigate("/");
+        //     } catch (leaveError) {
+        //       console.error("Error leaving Zoom session:", leaveError);
+        //     }
+        //   }
+        // };
     }, [isHost, navigate, roomName, username]);
 
-    // Helper: Bind user-related events
+    /**
+     * Bind user-related events (added, removed, updated).
+     */
     const bindZoomEvents = (zoomClient, stream, participantsCanvas) => {
-        // user-added event: new participant joined
+        // user-added: new participant
         zoomClient.on("user-added", async (user) => {
             console.log("user-added", user);
-            // If user is sending video immediately, render it
             if (user.bVideoOn) {
                 try {
                     await stream.renderVideo(
@@ -133,19 +136,22 @@ function Zoom() {
             }
         });
 
-        // user-removed event: participant left
+        // user-removed: participant left
         zoomClient.on("user-removed", (user) => {
             console.log("user-removed", user);
-            // Optionally stop rendering if you're tracking each user's canvas
-            // stream.stopRenderVideo(participantsCanvas, user.userId);
+            // Optionally stop rendering if you're only using one canvas
+            try {
+                stream.stopRenderVideo(participantsCanvas, user.userId);
+            } catch (error) {
+                console.error("Error stopping removed user's video:", error);
+            }
         });
 
-        // user-updated event: participant toggled video or audio, changed name, etc.
-        // This is important to detect when a user starts video after joining
+        // user-updated: participant toggled video, audio, etc.
         zoomClient.on("user-updated", async (user) => {
             console.log("user-updated", user);
             if (user.bVideoOn) {
-                // The user has just turned on video
+                // Turn on their video
                 try {
                     await stream.renderVideo(
                         participantsCanvas,
@@ -163,9 +169,8 @@ function Zoom() {
                     );
                 }
             } else {
-                // The user has turned off video
+                // Turn off their video
                 try {
-                    // Ensure you stop rendering that user's video if you're only using one canvas
                     stream.stopRenderVideo(participantsCanvas, user.userId);
                 } catch (error) {
                     console.error(
@@ -177,7 +182,9 @@ function Zoom() {
         });
     };
 
-    // Leave meeting
+    /**
+     * Leave meeting
+     */
     const handleLeaveMeeting = async () => {
         try {
             if (client) {
@@ -189,7 +196,9 @@ function Zoom() {
         }
     };
 
-    // Toggle Audio
+    /**
+     * Toggle Audio
+     */
     const handleToggleAudio = async () => {
         if (!mediaStream) return;
         try {
@@ -206,13 +215,19 @@ function Zoom() {
         }
     };
 
-    // Switch camera
+    /**
+     * Switch Camera (front <-> back, on devices that have both)
+     */
     const switchCamera = async () => {
         if (mediaStream) {
             const newCamera = currentCamera === "user" ? "environment" : "user";
-            await mediaStream.switchCamera(newCamera);
-            setCurrentCamera(newCamera);
-            console.log(`Switched to ${newCamera} camera`);
+            try {
+                await mediaStream.switchCamera(newCamera);
+                setCurrentCamera(newCamera);
+                console.log(`Switched to ${newCamera} camera`);
+            } catch (camErr) {
+                console.error("Error switching camera:", camErr);
+            }
         }
     };
 
@@ -232,7 +247,7 @@ function Zoom() {
                     )}
                 </div>
 
-                {/* Buttons */}
+                {/* Controls */}
                 <div className="flex justify-center gap-4 py-5">
                     <button
                         className="bg-gray-200 py-2 px-4 rounded"
@@ -258,12 +273,19 @@ function Zoom() {
 
                 {/* Video Elements */}
                 <div className="flex flex-col gap-1.5 lg:flex-row h-[500px]">
+                    {/* LOCAL SELF-VIEW */}
                     <div className="w-full lg:w-[50%] h-full bg-blue-500">
                         <video
                             id="self-view"
                             className="h-full object-cover"
+                            // Key attributes to ensure playback in many browsers
+                            autoPlay
+                            playsInline
+                            muted
                         ></video>
                     </div>
+
+                    {/* REMOTE PARTICIPANTS */}
                     <div className="w-full lg:w-[50%] h-full bg-blue-800">
                         <canvas
                             id="participants-c"
