@@ -21,7 +21,7 @@ function Zoom() {
     useEffect(() => {
         async function initZoom() {
             try {
-                // 1. Generate signature with role = 1 if host, otherwise 0
+                // 1. Generate signature with role = 1 if host, 0 if guest
                 const signature = generateSignature(
                     roomName,
                     isHost ? 1 : 0,
@@ -34,21 +34,21 @@ function Zoom() {
                 const participantsCanvas =
                     document.getElementById("participants-c");
 
-                // 3. Create client & initialize
+                console.log(selfView, participantsCanvas);
+
+                // 3. Create  client & initialize
                 const zoomClient = ZoomVideo.createClient();
                 await zoomClient.init("en-US", "Global", {
                     patchJsMedia: true,
                 });
                 setClient(zoomClient);
 
-                // 4. Join the session
                 zoomClient
                     .join(roomName, signature, username, "")
-                    .then(() => {
+                    .then((response) => {
                         let stream = zoomClient.getMediaStream();
                         setMediaStream(stream);
 
-                        // Start local video
                         stream
                             .startVideo({
                                 videoElement: selfView,
@@ -56,7 +56,6 @@ function Zoom() {
                             .then(() => {
                                 console.log("Self video started successfully");
 
-                                // Render self video
                                 stream
                                     .renderVideo(
                                         selfView,
@@ -78,49 +77,67 @@ function Zoom() {
                                         );
                                     });
 
-                                // Render existing participants (only if they have video on)
                                 zoomClient
                                     .getAllUser()
                                     .forEach(async (user) => {
-                                        if (
-                                            user.userId !==
-                                                zoomClient.getCurrentUserInfo()
-                                                    .userId &&
-                                            user.bVideoOn
-                                        ) {
-                                            try {
-                                                await stream.renderVideo(
-                                                    participantsCanvas,
-                                                    user.userId,
-                                                    540,
-                                                    960,
-                                                    0,
-                                                    0,
-                                                    2
-                                                );
+                                        console.log("user[0 ]", user[0]);
+                                        console.log("user.userId", user.userId);
+
+                                        stream
+                                            .renderVideo(
+                                                participantsCanvas,
+                                                user.userId,
+                                                540,
+                                                960,
+                                                0,
+                                                0,
+                                                2
+                                            )
+                                            .then(() => {
                                                 console.log(
                                                     "User video rendered successfully for user",
                                                     user.userId
                                                 );
-                                            } catch (err) {
+                                            })
+                                            .catch((error) => {
                                                 console.error(
-                                                    "Error rendering getAllUser video:",
-                                                    err
+                                                    "Error rendering get all user video :",
+                                                    error
                                                 );
-                                            }
-                                        }
+                                            });
                                     });
-
-                                // Bind user-added / user-removed / user-updated events
-                                BindEvent(
-                                    stream,
-                                    zoomClient,
-                                    participantsCanvas
-                                );
                             })
                             .catch((error) => {
                                 console.error("Error starting video:", error);
                             });
+
+                        function BindEvent(stream) {
+                            zoomClient.on("user-added", (payload) => {
+                                console.log("user-added", payload);
+                                stream
+                                    .renderVideo(
+                                        participantsCanvas,
+                                        payload.userId,
+                                        540,
+                                        540,
+                                        0,
+                                        0,
+                                        2
+                                    )
+                                    .then(() => {
+                                        console.log(
+                                            "User video rendered successfully",
+                                            payload.userId
+                                        );
+                                    })
+                                    .catch((error) => {
+                                        console.error(
+                                            "Error rendering user video:",
+                                            error
+                                        );
+                                    });
+                            });
+                        }
                     })
                     .catch((error) => {
                         console.log("Error while joining the meeting:", error);
@@ -132,7 +149,7 @@ function Zoom() {
 
         initZoom();
 
-        // OPTIONAL: If you want to leave automatically on unmount, uncomment:
+        // OPTIONAL: if you want to leave automatically on unmount, uncomment:
         // return () => {
         //   if (client) {
         //     client.leave().catch(err => console.error("Error leaving on unmount:", err));
@@ -144,80 +161,66 @@ function Zoom() {
     /**
      * Bind user-related events.
      */
-    const BindEvent = (stream, zoomClient, participantsCanvas) => {
+    const bindZoomEvents = (zoomClient, stream, participantsCanvas) => {
+        console.log("----------i am on zoom page for bindZoomEvents");
+
         // user-added => a new participant has joined
-        zoomClient.on("user-added", (payload) => {
-            const newUsers = Array.isArray(payload) ? payload : [payload];
-            newUsers.forEach((user) => {
-                if (user.bVideoOn) {
-                    mediaStream
-                        .renderVideo(
-                            participantsCanvas,
-                            user.userId,
-                            540,
-                            540,
-                            0,
-                            0,
-                            2
-                        )
-                        .then(() =>
-                            console.log("Rendered user video:", user.userId)
-                        )
-                        .catch((err) =>
-                            console.error("renderVideo error:", err)
-                        );
+        zoomClient.on("user-added", async (user) => {
+            console.log("user-added", user);
+            if (user.bVideoOn) {
+                try {
+                    await stream.renderVideo(
+                        participantsCanvas,
+                        user.userId,
+                        540,
+                        960,
+                        0,
+                        0,
+                        2
+                    );
+                } catch (error) {
+                    console.error("Error rendering new user's video:", error);
                 }
-            });
+            }
         });
 
         // user-removed => participant left
-        zoomClient.on("user-removed", (payload) => {
-            console.log("user-removed", payload);
+        zoomClient.on("user-removed", (user) => {
+            console.log("user-removed", user);
             try {
-                stream.stopRenderVideo(participantsCanvas, payload.userId);
+                // Stop rendering if using a shared canvas
+                stream.stopRenderVideo(participantsCanvas, user.userId);
             } catch (error) {
                 console.error("Error stopping removed user's video:", error);
             }
         });
 
         // user-updated => participant toggled video/audio or changed name
-        zoomClient.on("user-updated", (payload) => {
-            console.log("user-updated", payload);
-            if (payload.userId === zoomClient.getCurrentUserInfo().userId)
-                return;
-
-            if (payload.bVideoOn) {
-                // If video turned on, render
-                stream
-                    .renderVideo(
+        zoomClient.on("user-updated", async (user) => {
+            console.log("user-updated", user);
+            if (user.bVideoOn) {
+                try {
+                    await stream.renderVideo(
                         participantsCanvas,
-                        payload.userId,
+                        user.userId,
                         540,
-                        540,
+                        960,
                         0,
                         0,
                         2
-                    )
-                    .then(() => {
-                        console.log(
-                            "Video rendered for updated user:",
-                            payload.userId
-                        );
-                    })
-                    .catch((error) => {
-                        console.error(
-                            "Error rendering updated user's video:",
-                            error
-                        );
-                    });
-            } else {
-                // If video turned off, stop rendering
-                try {
-                    stream.stopRenderVideo(participantsCanvas, payload.userId);
+                    );
                 } catch (error) {
                     console.error(
-                        "Error stopping video for user",
-                        payload.userId,
+                        `Error rendering updated user's video:`,
+                        error
+                    );
+                }
+            } else {
+                try {
+                    stream.stopRenderVideo(participantsCanvas, user.userId);
+                } catch (error) {
+                    console.error(
+                        `Error stopping video for user ${user.userId}`,
                         error
                     );
                 }
@@ -320,7 +323,7 @@ function Zoom() {
                     <div className="w-full lg:w-[50%] h-full bg-blue-500">
                         <video
                             id="self-view"
-                            className="h-full w-full object-cover"
+                            className="h-full object-cover"
                             autoPlay
                             playsInline
                             muted
@@ -331,7 +334,7 @@ function Zoom() {
                     <div className="w-full lg:w-[50%] h-full bg-blue-800">
                         <canvas
                             id="participants-c"
-                            className="h-full w-full object-cover"
+                            className="h-full object-cover"
                         ></canvas>
                     </div>
                 </div>
