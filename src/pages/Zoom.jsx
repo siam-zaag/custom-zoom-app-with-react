@@ -88,6 +88,7 @@ function Zoom() {
                             );
                         }
                     }
+                    console.log("----------i am on zoom page for loop");
                 }
 
                 // 9. Listen for new participants or changes
@@ -112,6 +113,8 @@ function Zoom() {
      * Bind user-related events.
      */
     const bindZoomEvents = (zoomClient, stream, participantsCanvas) => {
+        console.log("----------i am on zoom page for bindZoomEvents");
+
         // user-added => a new participant has joined
         zoomClient.on("user-added", async (user) => {
             console.log("user-added", user);
