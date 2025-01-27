@@ -8,11 +8,12 @@ function App() {
         <Router>
             <Routes>
                 {/* Home Page (where the form lives) */}
-                <Route path="/" element={<Zoom />} />
-                {/* <Route path="/" element={<Home />} /> */}
+                {/* <Route path="/" element={<Zoom />} /> */}
+                <Route path="/" element={<Home />} />
 
                 {/* Meeting Page */}
                 <Route path="/meeting" element={<Meeting />} />
+                <Route path="/zoom-meeting" element={<Zoom />} />
             </Routes>
         </Router>
     );

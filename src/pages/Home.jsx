@@ -24,13 +24,20 @@ function Home() {
         setError("");
 
         // Navigate to Meeting page with the data
-        navigate("/meeting", {
+        navigate("/zoom-meeting", {
             state: {
                 username,
                 roomName,
                 isHost,
             },
         });
+        // navigate("/meeting", {
+        //     state: {
+        //         username,
+        //         roomName,
+        //         isHost,
+        //     },
+        // });
     };
 
     return (
@@ -76,7 +83,7 @@ function Home() {
                     className="bg-blue-600 rounded-2xl py-2 px-5 text-white"
                     type="submit"
                 >
-                    Next
+                    Join
                 </button>
             </form>
         </div>

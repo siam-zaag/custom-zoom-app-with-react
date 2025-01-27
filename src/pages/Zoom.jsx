@@ -1,26 +1,35 @@
-import React, { Fragment } from "react";
+import React, { Fragment, useState } from "react";
 import ZoomVideo from "@zoom/videosdk";
 import { useEffect } from "react";
 import { generateSignature } from "../utils/utils";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 const sdkKey = import.meta.env.VITE_SDK_KEY;
 const sdkSecret = import.meta.env.VITE_SDK_SECRET;
-const roomName = "myRoom";
 
 function Zoom() {
-    const [searchParams, setSearchParams] = useSearchParams();
-    const isHost = searchParams.get("isHost");
-    const username = searchParams.get("username");
-    console.log("isHost", isHost);
-    console.log("username", username);
+    const navigate = useNavigate();
+    const { state } = useLocation();
+    const { username, roomName, isHost } = state || {};
+
+    const [client, setClient] = useState(null);
+    const [mediaStream, setMediaStream] = useState(null);
+    const [joined, setJoined] = useState(false);
+    // Audio/Video toggle states
+    const [isAudioOn, setIsAudioOn] = useState(false);
+    const [isVideoOn, setIsVideoOn] = useState(false);
+
+    // camera state
+    const [currentCamera, setCurrentCamera] = useState("user");
+
+    const [error, setError] = useState("");
 
     useEffect(() => {
         async function initZoom() {
             try {
                 const signature = generateSignature(
                     roomName,
-                    parseInt(isHost),
+                    isHost ? 1 : 0,
                     sdkKey,
                     sdkSecret
                 );
@@ -32,8 +41,10 @@ function Zoom() {
                 await zoomClient.init("en-US", "Global", {
                     patchJsMedia: true,
                 });
+                setClient(zoomClient);
                 await zoomClient.join(roomName, signature, username, "");
                 const stream = zoomClient.getMediaStream();
+                setMediaStream(stream);
                 try {
                     await stream.startVideo({
                         videoElement: selfView,
@@ -99,28 +110,113 @@ function Zoom() {
             }
         }
         initZoom();
-    }, [isHost, username]);
+        // return () => {
+        //     if (client) {
+        //         try {
+        //             client.leave();
+        //             navigate("/");
+        //         } catch (leaveError) {
+        //             console.error("Error leaving Zoom session:", leaveError);
+        //         }
+        //     }
+        // };
+    }, [client, isHost, navigate, roomName, username]);
+
+    // leave meeting
+    const handleLeaveMeeting = async () => {
+        try {
+            await client.leave();
+            navigate("/");
+        } catch (err) {
+            console.error("Error leaving meeting:", err);
+        }
+    };
+
+    /**
+     * Toggle Audio
+     */
+    const handleToggleAudio = async () => {
+        console.log("i am `handleToggleAudio`");
+
+        if (!mediaStream) return;
+
+        try {
+            console.log("i am `handleToggleAudio` try block");
+
+            if (isAudioOn) {
+                await mediaStream.stopAudio();
+                setIsAudioOn(false);
+            } else {
+                await mediaStream.startAudio();
+                setIsAudioOn(true);
+            }
+        } catch (audioErr) {
+            console.error("Error toggling audio:", audioErr);
+            setError("Error toggling audio. Check console for details.");
+        }
+    };
+
+    // switch camera
+    const switchCamera = async () => {
+        if (mediaStream) {
+            // Switch between front and back cameras
+            const newCamera = currentCamera === "user" ? "environment" : "user";
+            await mediaStream.switchCamera(newCamera);
+            setCurrentCamera(newCamera);
+            console.log(`Switched to ${newCamera} camera`);
+        }
+    };
 
     return (
         <Fragment>
-            <div className="text-center mt-8">
-                <h1>Zoom</h1>
-                <p>isHost: {isHost}</p>
-                <p>username: {username}</p>
-            </div>
+            <div className="h-[500px] w-[80%] mx-auto mt-8">
+                <div className="text-center mt-8">
+                    <h1 className="text-2xl font-bold mb-2">
+                        Welcome, {username}! You are in room: {roomName}
+                    </h1>
 
-            <div className="h-[500px] w-[80%] bg-gray-200 mx-auto mt-8 flex">
-                <div className="w-[50%] h-full bg-blue-500">
-                    <video
-                        id="self-view"
-                        className="h-full object-cover"
-                    ></video>
+                    {isHost ? (
+                        <p className="text-green-600 mb-4">You are the host.</p>
+                    ) : (
+                        <p className="text-gray-600 mb-4">
+                            You joined as a guest.
+                        </p>
+                    )}
                 </div>
-                <div className="w-[50%] h-full bg-blue-800">
-                    <canvas
-                        id="participants-c"
-                        className="h-full object-cover "
-                    ></canvas>
+                <div className="flex justify-center gap-4 py-5">
+                    <button
+                        className="bg-gray-200 py-2 px-4 rounded"
+                        onClick={handleToggleAudio}
+                    >
+                        {isAudioOn ? "Mute Audio" : "Unmute Audio"}
+                    </button>
+                    <button
+                        className="bg-red-600 text-white py-2 px-4 rounded mb-4 cursor-pointer"
+                        onClick={handleLeaveMeeting}
+                    >
+                        Leave Meeting
+                    </button>
+
+                    <button
+                        className="py-4 px-6 bg-purple-500 rounded-xl uppercase text-white ml-2"
+                        onClick={switchCamera}
+                    >
+                        Switch Camera
+                    </button>
+                </div>
+                <div className="flex h-[500px]">
+                    <div className="w-[50%] h-full bg-blue-500">
+                        <video
+                            id="self-view"
+                            className="h-full object-cover"
+                        ></video>
+                    </div>
+                    <div className="w-[50%] h-full bg-blue-800">
+                        <canvas
+                            id="participants-c"
+                            className="h-full object-cover "
+                        ></canvas>
+                    </div>
                 </div>
             </div>
         </Fragment>
