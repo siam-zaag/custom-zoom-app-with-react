@@ -67,31 +67,31 @@ function Zoom() {
                 }
 
                 // 8. Render video for all current users who are already sending video
-                // const allUsers = zoomClient.getAllUser();
-                // for (const user of allUsers) {
-                //     if (user.bVideoOn) {
-                //         // Only call renderVideo if they're actually sending video
-                //         try {
-                //             await stream.renderVideo(
-                //                 participantsCanvas,
-                //                 user.userId,
-                //                 540,
-                //                 960,
-                //                 0,
-                //                 0,
-                //                 2
-                //             );
-                //         } catch (err) {
-                //             console.error(
-                //                 `Error rendering video for user ${user.userId}:`,
-                //                 err
-                //             );
-                //         }
-                //     }
-                // }
+                const allUsers = zoomClient.getAllUser();
+                for (const user of allUsers) {
+                    if (user.bVideoOn) {
+                        // Only call renderVideo if they're actually sending video
+                        try {
+                            await stream.renderVideo(
+                                participantsCanvas,
+                                user.userId,
+                                540,
+                                960,
+                                0,
+                                0,
+                                2
+                            );
+                        } catch (err) {
+                            console.error(
+                                `Error rendering video for user ${user.userId}:`,
+                                err
+                            );
+                        }
+                    }
+                }
 
-                // // 9. Bind user-related events for new/updated participants
-                // bindZoomEvents(zoomClient, stream, participantsCanvas);
+                // 9. Bind user-related events for new/updated participants
+                bindZoomEvents(zoomClient, stream, participantsCanvas);
             } catch (joinErr) {
                 console.error("Error joining the Zoom meeting:", joinErr);
             }
