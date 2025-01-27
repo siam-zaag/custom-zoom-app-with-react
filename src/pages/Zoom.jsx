@@ -204,7 +204,7 @@ function Zoom() {
                         Switch Camera
                     </button>
                 </div>
-                <div className="flex h-[500px]">
+                <div className="flex flex-col gap-1.5 lg:flex-row h-[500px]">
                     <div className="w-[50%] h-full bg-blue-500">
                         <video
                             id="self-view"
