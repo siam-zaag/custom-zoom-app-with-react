@@ -89,6 +89,8 @@ function Zoom() {
                     );
                 }
                 function BindEvents(stream) {
+                    console.log("Binding events", stream);
+
                     zoomClient.on("user-added", (payload) => {
                         console.log("user-added", payload);
                         stream.renderVideo(
@@ -205,13 +207,13 @@ function Zoom() {
                     </button>
                 </div>
                 <div className="flex flex-col gap-1.5 lg:flex-row h-[500px]">
-                    <div className="w-[50%] h-full bg-blue-500">
+                    <div className="w-full lg:w-[50%] h-full bg-blue-500">
                         <video
                             id="self-view"
                             className="h-full object-cover"
                         ></video>
                     </div>
-                    <div className="w-[50%] h-full bg-blue-800">
+                    <div className="w-full lg:w-[50%] h-full bg-blue-800">
                         <canvas
                             id="participants-c"
                             className="h-full object-cover "
