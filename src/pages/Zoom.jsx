@@ -34,65 +34,114 @@ function Zoom() {
                 const participantsCanvas =
                     document.getElementById("participants-c");
 
-                // 3. Create client & initialize
+                console.log(selfView, participantsCanvas);
+
+                // 3. Create  client & initialize
                 const zoomClient = ZoomVideo.createClient();
                 await zoomClient.init("en-US", "Global", {
                     patchJsMedia: true,
                 });
                 setClient(zoomClient);
 
-                // 4. Join the room
-                await zoomClient.join(roomName, signature, username, "");
+                zoomClient
+                    .join(roomName, signature, username, "")
+                    .then((response) => {
+                        let stream = zoomClient.getMediaStream();
+                        setMediaStream(stream);
 
-                // 5. Grab the media stream & store in state
-                const stream = zoomClient.getMediaStream();
-                setMediaStream(stream);
+                        stream
+                            .startVideo({
+                                videoElement: selfView,
+                            })
+                            .then(() => {
+                                console.log("Self video started successfully");
 
-                // 6. Start your own local video
-                //    (Guest or Host must do this individually to share their camera.)
-                await stream.startVideo({ videoElement: selfView });
+                                stream
+                                    .renderVideo(
+                                        selfView,
+                                        zoomClient.getCurrentUserInfo().userId,
+                                        540,
+                                        540
+                                    )
+                                    .then(() => {
+                                        console.log(
+                                            "Self video rendered successfully",
+                                            zoomClient.getCurrentUserInfo()
+                                                .userId
+                                        );
+                                    })
+                                    .catch((error) => {
+                                        console.error(
+                                            "Error rendering video:",
+                                            error
+                                        );
+                                    });
 
-                // 7. Render your local video feed
-                try {
-                    await stream.renderVideo(
-                        selfView,
-                        zoomClient.getCurrentUserInfo().userId,
-                        540,
-                        960,
-                        0,
-                        0,
-                        2
-                    );
-                } catch (error) {
-                    console.error("Error rendering self video:", error);
-                }
+                                zoomClient
+                                    .getAllUser()
+                                    .forEach(async (user) => {
+                                        console.log("user[0 ]", user[0]);
+                                        console.log("user.userId", user.userId);
 
-                // 8. Render video for already-present users who have their cameras on
-                const allUsers = zoomClient.getAllUser();
-                for (const user of allUsers) {
-                    if (user.bVideoOn) {
-                        try {
-                            await stream.renderVideo(
-                                participantsCanvas,
-                                user.userId,
-                                540,
-                                960,
-                                0,
-                                0,
-                                2
-                            );
-                        } catch (err) {
-                            console.error(
-                                `Error rendering video for user ${user.userId}:`,
-                                err
-                            );
+                                        stream
+                                            .renderVideo(
+                                                participantsCanvas,
+                                                user.userId,
+                                                540,
+                                                960,
+                                                0,
+                                                0,
+                                                2
+                                            )
+                                            .then(() => {
+                                                console.log(
+                                                    "User video rendered successfully for user",
+                                                    user.userId
+                                                );
+                                            })
+                                            .catch((error) => {
+                                                console.error(
+                                                    "Error rendering get all user video :",
+                                                    error
+                                                );
+                                            });
+                                    });
+                            })
+                            .catch((error) => {
+                                console.error("Error starting video:", error);
+                            });
+
+                        function BindEvent(stream) {
+                            zoomClient.on("user-added", (payload) => {
+                                console.log("user-added", payload);
+                                stream
+                                    .renderVideo(
+                                        participantsCanvas,
+                                        payload.userId,
+                                        540,
+                                        540,
+                                        0,
+                                        0,
+                                        2
+                                    )
+                                    .then(() => {
+                                        console.log(
+                                            "User video rendered successfully",
+                                            payload.userId
+                                        );
+                                    })
+                                    .catch((error) => {
+                                        console.error(
+                                            "Error rendering user video:",
+                                            error
+                                        );
+                                    });
+                            });
                         }
-                    }
-                    console.log("----------i am on zoom page for loop");
-                }
-
-                // 9. Listen for new participants or changes
-                bindZoomEvents(zoomClient, stream, participantsCanvas);
+                    })
+                    .catch((error) => {
+                        console.log("Error while joining the meeting:", error);
+                    });
             } catch (joinErr) {
                 console.error("Error joining the Zoom meeting:", joinErr);
             }
